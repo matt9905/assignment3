@@ -639,57 +639,60 @@ def main(filename):
         
         
         
-        if min_time_duration == None or min_time_duration > conn.duration:
-            min_time_duration = conn.duration
-            
-        if max_time_duration == None or max_time_duration < conn.duration:
-            max_time_duration = conn.duration
-        
-        lo_durations.append(conn.duration)
-        
-        
-        for rtt in conn.rtts:
-            
-        
-            if min_rtt == None or min_rtt > rtt:
-                min_rtt = rtt
+        if conn.complete:
+            if min_time_duration == None or min_time_duration > conn.duration:
+                min_time_duration = conn.duration
                 
-            if max_rtt == None or max_rtt < rtt:
-                max_rtt = rtt
+            if max_time_duration == None or max_time_duration < conn.duration:
+                max_time_duration = conn.duration
             
-            lo_all_rtts.append(rtt)
+            lo_durations.append(conn.duration)
             
             
-            
-        for window_size in conn.window_sizes:
-            
-        
-            if min_window_size == None or min_window_size > window_size:
-                min_window_size = window_size
+            for rtt in conn.rtts:
                 
-            if max_window_size == None or max_window_size < window_size:
-                max_window_size = window_size
             
-            lo_all_window_sizes.append(window_size)
+                if min_rtt == None or min_rtt > rtt:
+                    min_rtt = rtt
+                    
+                if max_rtt == None or max_rtt < rtt:
+                    max_rtt = rtt
+                
+                lo_all_rtts.append(rtt)
+                
+                
+                
+            for window_size in conn.window_sizes:
+                
+            
+                if min_window_size == None or min_window_size > window_size:
+                    min_window_size = window_size
+                    
+                if max_window_size == None or max_window_size < window_size:
+                    max_window_size = window_size
+                
+                lo_all_window_sizes.append(window_size)
+                
+                
             
         
-        
+            num_total_packets = conn.dst_to_src_packets + conn.src_to_dst_packets
+            
+            
+            if min_num_total_packets == None or min_num_total_packets > num_total_packets:
+                min_num_total_packets = num_total_packets
+                
+            if max_num_total_packets == None or max_num_total_packets < num_total_packets:
+                max_num_total_packets = num_total_packets
+            
+            lo_total_num_packets.append(num_total_packets)
+            
+            
+            
+            
         
         if conn.complete:
             num_complete_conns+=1
-        
-        
-        
-        num_total_packets = conn.dst_to_src_packets + conn.src_to_dst_packets
-        
-        
-        if min_num_total_packets == None or min_num_total_packets > num_total_packets:
-            min_num_total_packets = num_total_packets
-            
-        if max_num_total_packets == None or max_num_total_packets < num_total_packets:
-            max_num_total_packets = num_total_packets
-        
-        lo_total_num_packets.append(num_total_packets)
         
         
         
@@ -764,7 +767,7 @@ def main(filename):
     
     print("The total number of complete TCP connections: " + str(num_complete_conns))
     
-    print("The number of reset TCP connections " + str(num_reset_conns))
+    print("The number of reset TCP connections: " + str(num_reset_conns))
     
     
     print("The number of tcp connections that were still open when the trace capture ended: " \
