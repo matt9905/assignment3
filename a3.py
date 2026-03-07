@@ -664,13 +664,13 @@ def main(filename):
         conn_num+=1
         
         
-        print("Source Address: " + str(k[0]))
+        print("Source Address: " + str(k[2]))
         
-        print("Destination Address: " + str(k[2]))
+        print("Destination Address: " + str(k[0]))
         
-        print("Source Port: " + str(k[1]))
+        print("Source Port: " + str(k[3]))
         
-        print("Destination Port: " + str(k[3]))
+        print("Destination Port: " + str(k[1]))
         
         
         print("Status: S" + str(conn.status[0]) + "F" + str(conn.status[1]))
