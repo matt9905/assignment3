@@ -672,9 +672,8 @@ def main(filename):
         
         print("Destination Port: " + str(k[3]))
         
-        print("Status: ",end="")
         
-        print("S" + str(conn.status[0]) + "F" + str(conn.status[1]))
+        print("Status: S" + str(conn.status[0]) + "F" + str(conn.status[1]))
         
         
         #complete connection info:
