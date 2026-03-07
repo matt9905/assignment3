@@ -99,6 +99,7 @@ class Connection:
                 
                 
                 self.num_of_rsts += 1
+                self.status = [-1, -1]
                 
                 
     
@@ -108,8 +109,10 @@ class Connection:
         
         self.check_and_increment_flags()
                 
+        
+        if self.status != [-1, -1]:
                 
-        self.status = [self.num_of_syns, self.num_of_fins]
+            self.status = [self.num_of_syns, self.num_of_fins]
         
         
         
@@ -497,8 +500,41 @@ def get_values_for_packet (pckt, packet_payload, tcp_hdr_start):
     
     return pckt
     
+
+def conn_open_after (conn):
+
     
 
+    
+    last_fin_i = -1
+    
+    i = 0
+    
+    
+    
+    for p in conn.lo_packets:
+        
+        if p.TCP_header.flags.get("FIN") == 1:
+            last_fin_i  = i
+            
+        i += 1
+            
+    if last_fin_i == -1:
+        return True
+    
+    
+
+    for p in conn.lo_packets[last_fin_i+1:]:
+        payload_size = p.IP_header.total_len - p.IP_header.ip_header_len - p.TCP_header.data_offset
+        
+        if payload_size > 0:
+            return True
+        
+    
+    
+            
+    return False
+        
 
 
 def main(filename):
@@ -595,10 +631,10 @@ def main(filename):
         if conn.num_of_rsts > 0:
             num_reset_conns += 1
         
-        if conn.num_of_syns > 0 and conn.num_of_fins == 0:
+        if conn_open_after(conn):
             num_open_conns += 1
         
-        if conn.num_of_syns == 0:
+        if conn.lo_packets[0].TCP_header.flags.get("SYN") == 0:
             num_conns_started_before_capture += 1
         
         
@@ -673,7 +709,10 @@ def main(filename):
         print("Destination Port: " + str(k[1]))
         
         
-        print("Status: S" + str(conn.status[0]) + "F" + str(conn.status[1]))
+        if conn.status == [-1, -1]:
+            print("Status: R")
+        else:
+            print("Status: S" + str(conn.status[0]) + "F" + str(conn.status[1]))
         
         
         #complete connection info:
