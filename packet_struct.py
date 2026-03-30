@@ -1,16 +1,16 @@
 import struct
 
 class IP_Header:
-    src_ip = None #<type 'str'>
-    dst_ip = None #<type 'str'>
-    ip_header_len = None #<type 'int'>
-    total_len = None    #<type 'int'>
-    
     def __init__(self):
         self.src_ip = None
         self.dst_ip = None
         self.ip_header_len = 0
         self.total_len = 0
+        self.identification = 0
+        self.flags = 0
+        self.frag_offset =0
+        self.protocol = 0
+
     
     def ip_set(self,src_ip,dst_ip):
         self.src_ip = src_ip
@@ -41,7 +41,42 @@ class IP_Header:
         num4 = (buffer[1]&15)
         length = num1+num2+num3+num4
         self.total_len_set(length)
- 
+
+
+    def get_protocol(self, buffer):
+        self.protocol = struct.unpack('B', buffer)[0]
+    
+    def get_fragmentation_info(self, id_buffer, frag_buffer):
+        self.identification = struct.unpack('>H', id_buffer)[0]
+        info = struct.unpack('>H', frag_buffer)[0]
+        self.flags = info >> 13
+        self.frag_offset = (info & 0x1FFF) * 8
+
+class UDP_Header:
+    def __init__(self):
+        self.src_port = 0
+        self.dst_port = 0
+    
+
+    def get_ports(self, buffer):
+        self.src_port = struct.unpack('>H', buffer[0:2])[0]
+        self.dst_port = struct.unpack('>H', buffer[2:4])[0]
+
+
+
+class ICMP_Header:
+    def __init__(self):
+        self.type = 0
+        self.code = 0
+        self.seq_num = 0
+
+    def get_type_and_code(self, buffer):
+        self.type, self.code = struct.unpack('BB', buffer[0:2])
+    
+    def get_sequence_num(self, buffer):
+        self.seq_num = struct.unpack('>H', buffer[0:2])[0]
+
+
 class TCP_Header:
     src_port = 0
     dst_port = 0
@@ -162,17 +197,23 @@ class packet():
     RTT_value = 0
     RTT_flag = False
     buffer = None
+    is_probe = False
     
     
     def __init__(self):
         self.IP_header = IP_Header()
         self.TCP_header = TCP_Header()
+        self.ICMP_header = None
         #self.pcap_hd_info = pcap_ph_info()
         self.timestamp = 0
         self.packet_No =0
         self.RTT_value = 0.0
         self.RTT_flag = False
         self.buffer = None
+        self.probe = False
+        self.err = False
+        self.embedded_match_key = None
+        self.calculate_rtt_differently = False
         
     def timestamp_set(self,buffer1,buffer2,orig_time):
         seconds = struct.unpack('I',buffer1)[0]

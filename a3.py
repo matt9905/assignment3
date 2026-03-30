@@ -1,247 +1,61 @@
 import struct
 import sys
-
 import packet_struct
 
 
-ETHERNET_HEADER_SIZE = 14
-IP_MIN_HEADER_SIZE = 20
-
-
-
-COMBINED_IP_AND_ETHERNET_MIN_SIZE = ETHERNET_HEADER_SIZE + IP_MIN_HEADER_SIZE
-
-PROTOCOL_OFFSET_IN_IP_HEADER = 9
-    
-    
-    
-    
-class Connection:
-    
-    
-    def __init__(self, key):
-        self.key = key
-        self.lo_packets = []
-        
-        
-        
-        self.end_time = 0.0
-        
-        self.duration = 0.0
-        
-        self.complete = False
-        
-        self.start_time = 0.0
-        
-        
-        
-        
-        
-        
-        
-        self.num_of_rsts = 0
-        
-        
-        self.num_of_syns = 0
-        self.num_of_fins = 0
-        
-        self.status = [0, 0] 
-        
-
-        
-        self.src_to_dst_packets = 0
-        
-        self.dst_to_src_packets = 0
-        
-        self.src_to_dst_bytes = 0
-        
-        self.dst_to_src_bytes = 0
-        
-        self.window_sizes = []
-        
-        self.rtts = []
-        
-        
-        
-        
-    def append_packet(self, packet):
-        self.lo_packets.append(packet)
-
-
-
-
-
-    def check_and_increment_flags(self):
-        
-        for p in self.lo_packets:
-            
-            
-            
-            
-            
-            if p.TCP_header.flags.get("SYN") == 1:
-                
-                
-                if self.num_of_syns == 0: #if its the first syn seen
-                    self.start_time = p.timestamp
-                    
-                self.num_of_syns += 1
-                    
-            
-            
-            if p.TCP_header.flags.get("FIN") == 1:
-                self.num_of_fins += 1
-                
-                self.end_time = p.timestamp #we update end time each time, so it will be the last fin
-    
-    
-            if p.TCP_header.flags.get("RST") == 1:
-                
-                
-                self.num_of_rsts += 1
-                self.status = [-1, -1]
-                
-                
-    
-
-    def check_for_complete(self):
-        
-        
-        self.check_and_increment_flags()
-                
-        
-        if self.status != [-1, -1]:
-                
-            self.status = [self.num_of_syns, self.num_of_fins]
-        
-        
-        
-        
-        if self.num_of_fins >=1 and self.num_of_syns >= 1:
-            unrounded_duration = self.end_time - self.start_time
-            
-            self.duration = round(unrounded_duration, 6)
-            self.complete = True
-            
-            
-            
-    
-    
-
-
-
-def calculate_connection_details(conn):
-        
-    
-        source_ip = conn.lo_packets[0].IP_header.src_ip
-        
-        
-        if not conn.complete:
-            return
-        
-        
-        
-        
-        
-        expected_acks = {}
-        
-        for p in conn.lo_packets:
-            
-            
-            
-            
-            payload_size = p.IP_header.total_len - p.IP_header.ip_header_len - p.TCP_header.data_offset
-            
-            
-            
-            
-            if p.IP_header.src_ip == source_ip:
-                conn.src_to_dst_packets += 1
-                conn.src_to_dst_bytes += payload_size
-            else:
-                conn.dst_to_src_packets += 1
-                conn.dst_to_src_bytes += payload_size
-                
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            # the first matching ACK packet
-            
-            if p.TCP_header.ack_num in expected_acks and p.TCP_header.flags.get("ACK") == 1:
-                
-                unrounded_computed_rtt = p.timestamp - expected_acks[p.TCP_header.ack_num]
-                
-                
-                rounded_computed_rtt = round(unrounded_computed_rtt, 6)
-                
-                conn.rtts.append(rounded_computed_rtt)
-                
-                
-                
-                del expected_acks[p.TCP_header.ack_num]
-                
-               
-            
-        
-                    
-            if payload_size <= 0 and ( p.TCP_header.flags.get("FIN") == 1 or p.TCP_header.flags.get("SYN") == 1):
-                
-                cur_calculated_expected_ack = p.TCP_header.seq_num + 1
-                if cur_calculated_expected_ack not in expected_acks:
-                    expected_acks[cur_calculated_expected_ack] = p.timestamp
-                    
-            elif payload_size > 0:
-                
-                cur_calculated_expected_ack = p.TCP_header.seq_num + payload_size
-                
-                if cur_calculated_expected_ack not in expected_acks:
-                    expected_acks[cur_calculated_expected_ack] = p.timestamp
-                
-            
-            conn.window_sizes.append(p.TCP_header.window_size)
-                    
-                    
-                
-                
-                
-
-        
 def parse_global_header(filename):
-    #f = open ("sample-capture-file.cap", "rb")
+    #f = open ("group1-trace1.pcap", "rb")
+        
+    uses_nano = True
     
     f = open (filename, "rb")
     global_header = f.read(24)
-    magic_num, version_major, version_minor, thiszone, sigfigs, snaplen, network = \
-        struct.unpack('<IHHIIII', global_header) # little-endian
+    magic_num, version_major, version_minor, thiszone, sigfigs, snaplen, network = struct.unpack('<IHHIIII', global_header) # little-endian
         
+    
         
-    if magic_num == 0xd4c3b2a1:
+    if magic_num == 0xd4c3b2a1: #3569595041
         #change to big endian mode
-        magic_num, version_major, version_minor, thiszone, sigfigs, snaplen, network = struct.unpack(">IHHIIII", global_header)
         endian = '>'
-    elif magic_num == 0xa1b2c3d4:
+        uses_nano = False
+    elif magic_num == 0xa1b2c3d4: # 2712847316 #2712812621 
         endian = '<'
+        uses_nano = False
+    elif magic_num == 0xA1B23C4D : 
+        #microsecond precision, big endian
+        endian = '<'
+        
+        
+    elif magic_num == 0x4d3cb2a1:
+        #microsecond precision, little endian
+        endian = '>'
     else:
         print("Error: invalid magic number")
+        print("magic number is: " + str(magic_num))
         sys.exit(1)
         
         
-    return endian, f
+    return endian, f, uses_nano
+
+
+
+
+    
+def parse_packet_header_and_body (endian_format, given_file, uses_nano):
     
     
     
     
-def parse_packet_header_and_body (endian_format, given_file):
-    
+    if uses_nano:
+        timestamp_multiplier = 0.000000001
+    else:
+        timestamp_multiplier = 0.000001
+        
+        
+        
     num_packets = 0
     
-    packets_tcp = []
+    packets = []
     
     time_zero = None
     
@@ -251,634 +65,422 @@ def parse_packet_header_and_body (endian_format, given_file):
     
     packet_header = given_file.read(16)
     
+    #print("header format is " + str(header_format))
     
-    while len(packet_header) == 16:
+    
+    while len(packet_header) >= 16:
         
         num_packets += 1
-        
+
+        #print("iteration!!")
         #raw byte slices for the packet_struct.py file
         ts_sec_raw_bytes = packet_header[0:4]
-        ts_usec_raw_bytes = packet_header[4:8]
+        ts_subsec_raw_bytes = packet_header[4:8]
         
         
-        ts_sec, ts_usec, incl_len, orig_len = struct.unpack(header_format, packet_header)
+        ts_sec, ts_subsec, incl_len, time_zero = struct.unpack(header_format, packet_header)
         
+        #print("incl_len is " + str(incl_len))
         
-        #absolute time = ts_sec + (ts_usec * 10^-6)
-        abs_time = ts_sec + (ts_usec * 0.000001)
+        #absolute time = ts_sec + (ts_subsec * 10^-6)
+        abs_time = ts_sec + (ts_subsec * timestamp_multiplier)
         
         if time_zero == None:
             time_zero = abs_time
-            
-            
-        
         packet_payload = given_file.read(incl_len)
         
+            
+            
+        parsed = process_traceroute_pckt(packet_payload, num_packets, ts_sec_raw_bytes, ts_subsec_raw_bytes, time_zero)
         
+        #print(packet_payload.decode('utf-8', 'ignore'))
         
-        
+        if parsed is not None:
+            parsed.timestamp = abs_time
+            packets.append(parsed)
         
         
     
-    
-        packet_tcp = process_tcp(packet_payload, num_packets, ts_sec_raw_bytes, ts_usec_raw_bytes, time_zero)
-        
-        if packet_tcp is not None:
-            packets_tcp.append(packet_tcp)
         
         
         packet_header = given_file.read(16)
         
         
-    return packets_tcp
+    return packets
     
     
     
-    
-def check_for_completeness(dict_of_connections):
-    
-    
-    lo_conn_tuples = dict_of_connections.items()
-    
-    
-    verified_complete_connections = []
+def process_traceroute_pckt(packet_payload, num_packets, ts_sec_raw_bytes, ts_usec_raw_bytes, time_zero):
     
     
     
-    
-    
-    for cur_key, cur_connection in lo_conn_tuples:
-        
-        cur_connection.check_for_complete()
-        
-        if cur_connection.complete:
-            verified_complete_connections.append(cur_connection)
-            
-            
-    return verified_complete_connections
-        
-        
-        
-        
-        
-        
-        
-        
-    
-    
-    
-def process_tcp(packet_payload, num_packets, ts_sec_raw_bytes, ts_usec_raw_bytes, time_zero):
-    
-    
-    
-    if len(packet_payload) < COMBINED_IP_AND_ETHERNET_MIN_SIZE:
+    if len(packet_payload) < 34:
         return None
     
+    type_and_ihl = struct.unpack('>H',  packet_payload[12:14])
     
-    protocol_offset = PROTOCOL_OFFSET_IN_IP_HEADER + ETHERNET_HEADER_SIZE
-    
-    protocol_of_given_packet = struct.unpack('B', packet_payload[protocol_offset : protocol_offset+1])[0]
-    
-    
-    # now, check if it's tcp
-    
-    if protocol_of_given_packet != 6:
-        # it is NOT tcp, so return None
-        return None
-    
-    
-    # if we make it here, the packet IS tcp!
-    
-    
-    
-    
-    
-    
-    
-    return create_packet_struct(num_packets, ts_sec_raw_bytes, ts_usec_raw_bytes,time_zero,packet_payload)
-        
+    eth_type = type_and_ihl[0]
 
     
-
-def group_into_connections(packets_tcp):
-    
-    
-    
-    dict_of_connections = {}
-    
-    
-    for p in packets_tcp:
-        
-        cur_src_ip = p.IP_header.src_ip
-        cur_dst_ip = p.IP_header.dst_ip
-        cur_src_port = p.TCP_header.src_port
-        cur_dst_port = p.TCP_header.dst_port
-        
-        
-        # if the dst ip is smaller we want it to come first
-        if cur_src_ip > cur_dst_ip:
-            smallest_ip = cur_dst_ip
-            smallest_port = cur_dst_port
-            largest_ip = cur_src_ip
-            largest_port = cur_src_port
-        else:
-            smallest_ip = cur_src_ip
-            smallest_port = cur_src_port
-            largest_ip = cur_dst_ip
-            largest_port = cur_dst_port
-            
-        cur_key = (smallest_ip, smallest_port, largest_ip,largest_port)
-        
-        
-        
-        
-        if cur_key not in dict_of_connections:
-            dict_of_connections[cur_key] = Connection(cur_key)
-            
-            
-            
-        dict_of_connections[cur_key].append_packet(p)
-        
-        
-    return dict_of_connections
-        
-        
-            
-        
-            
-        
-            
-        
-    
-    
-def create_packet_struct (num_packets, ts_sec_raw_bytes, ts_usec_raw_bytes, time_zero, packet_payload):
-    
-    
-    p = packet_struct.packet()
-    
-    p.packet_No_set(num_packets)
-    
-    
-    p.timestamp_set(ts_sec_raw_bytes, ts_usec_raw_bytes, time_zero)
-    
-    
-    
-    
-    ip_header_start_location = ETHERNET_HEADER_SIZE # skip the ethernet header to go straight to ip header
-    
-    p.IP_header.get_header_len(packet_payload[ip_header_start_location: ip_header_start_location + 1])
-    ip_header_len = p.IP_header.ip_header_len
-    
-    
-    
-    p.IP_header.get_total_len(packet_payload[ip_header_start_location+2:ip_header_start_location+4])
-    
-    
-    # source ip starts 12 bytes into the ip header
-    source_ip_offset = ip_header_start_location + 12
-    
-    buff1 = packet_payload[source_ip_offset:source_ip_offset + 4]
-    
-    
-    
-    # dest ip starts 16 bytes into the ip header
-    dest_ip_offset = ip_header_start_location + 16
-    buff2 = packet_payload[dest_ip_offset: dest_ip_offset + 4]
-    
-    
-    p.IP_header.get_IP(buff1, buff2)
-    
-    
-    
-    tcp_header_start_location = ip_header_start_location + ip_header_len
-    
-    
-    
-    
-    
-    # if the packet is not long enough to have a TCP header then return None
-    if len(packet_payload) < tcp_header_start_location + 20:
+    if eth_type != 0x0800: # 0x0800 signifies ipv4
         return None
     
     
     
+    cur_packet = packet_struct.packet()
+    cur_packet.packet_No_set(num_packets)
     
-    return get_values_for_packet(p, packet_payload, tcp_header_start_location)
+    cur_packet.timestamp_set(ts_sec_raw_bytes, ts_usec_raw_bytes, time_zero)
+    
+    
+    
+    cur_packet.IP_header.get_header_len(packet_payload[14: 15]) # 14 means ip start
+    ip_length = cur_packet.IP_header.ip_header_len
+    
+    
+    cur_packet.IP_header.get_IP(
+        packet_payload[26: 30],
+        packet_payload[30: 34]
+    )
+    
+    
+    cur_packet.IP_header.get_protocol(packet_payload[23: 24])
+    cur_packet.IP_header.get_fragmentation_info(packet_payload[18:20], packet_payload[20:22])
+    
+    cur_protocol = cur_packet.IP_header.protocol
+    
+    if cur_protocol != 1 and cur_protocol != 17:
+        return None
+    
+
+
+    payload_start = 14 + ip_length # ip start is 14
+    
+    udp_condition = payload_start + 4
+    
+    icmp_condition = payload_start + 8
+    
+    
+    
+    
+    if payload_start + 4 <= len(packet_payload) and cur_protocol == 17:
+        cur_packet.UDP_header = packet_struct.UDP_Header()
+        cur_packet.UDP_header.get_ports(packet_payload[payload_start: payload_start + 4])
+
+        if 33434 <= cur_packet.UDP_header.dst_port <= 33529:
+            cur_packet.probe = True # 10 : 21
+
+    elif payload_start + 8 <= len(packet_payload) and cur_protocol == 1:
+        cur_packet.ICMP_header = packet_struct.ICMP_Header()
+        cur_packet.ICMP_header.get_type_and_code(packet_payload[payload_start: payload_start + 2])
+
+
+        icmp_type = cur_packet.ICMP_header.type
+
+
+        if icmp_type == 8:
+            cur_packet.probe = True
+            cur_packet.ICMP_header.get_sequence_num(packet_payload[payload_start + 6: payload_start + 8])
+
+        elif icmp_type == 11 or icmp_type == 0:
+            cur_packet.err = True
+            og_ip_start = payload_start + 8
 
 
 
+            if og_ip_start + 20 <= len(packet_payload):
+                og_ihl = 4 * (packet_payload[og_ip_start] & 0x0F)
+                og_protocol = packet_payload[og_ip_start + 9]
+                og_payload_start = og_ip_start + og_ihl
 
 
-def get_values_for_packet (pckt, packet_payload, tcp_hdr_start):
-    
-    pckt.TCP_header.get_src_port(packet_payload[tcp_hdr_start: tcp_hdr_start + 2])
-    
-    
-    
-    
-    pckt.TCP_header.get_dst_port(packet_payload[tcp_hdr_start+2: tcp_hdr_start + 4])
-    
-    
-    
-    pckt.TCP_header.get_seq_num(packet_payload[tcp_hdr_start+4: tcp_hdr_start + 8])
-    
-    
-    pckt.TCP_header.get_ack_num(packet_payload[tcp_hdr_start+8: tcp_hdr_start + 12])
-    
-    
-    pckt.TCP_header.get_data_offset(packet_payload[tcp_hdr_start+12: tcp_hdr_start + 13])
-    
-    
-    pckt.TCP_header.get_flags(packet_payload[tcp_hdr_start+13: tcp_hdr_start + 14])
-    
-    
-    
-    
-    
-    pckt.TCP_header.get_window_size(packet_payload[tcp_hdr_start + 14: tcp_hdr_start+15], packet_payload[tcp_hdr_start + 15: tcp_hdr_start+16])
-    
-    
-    return pckt
-    
 
-def conn_open_after (conn):
-
-    
-
-    
-    last_fin_i = -1
-    
-    i = 0
-    
-    
-    
-    for p in conn.lo_packets:
-        
-        if p.TCP_header.flags.get("FIN") == 1:
-            last_fin_i  = i
-            
-        i += 1
-            
-    if last_fin_i == -1:
-        return True
-    
-    
-
-    for p in conn.lo_packets[last_fin_i+1:]:
-        payload_size = p.IP_header.total_len - p.IP_header.ip_header_len - p.TCP_header.data_offset
-        
-        if payload_size > 0:
-            return True
-        
-    
-    
-            
-    return False
-        
-
-
-def main(filename):
-    endian, file_obj = parse_global_header(filename)
-    
-    
-        
-    parsed_tcp_packets = parse_packet_header_and_body(endian, file_obj)
-    
-    dict_of_connections = group_into_connections(parsed_tcp_packets)
-    
-    
-    returned_complete_conn = check_for_completeness(dict_of_connections)
-    
-    
-    
-    for conn in returned_complete_conn:
-        
-        calculate_connection_details(conn)
-    
-    
-    
-    
-    
-    print("A) Total number of connections: " + str(len(dict_of_connections)))
-    
-    
-    print("")
-    
-    
-    
-    
-    """
-    
-    
-    self.src_to_dst_packets = 0
-    
-    self.dst_to_src_packets = 0
-    
-    self.src_to_dst_bytes = 0
-    
-    self.dst_to_src_bytes = 0
-    
-    self.window_sizes = []
-    
-    self.rtts = []
-    
-    
-    """
-    
-    print("B) Connections' details:\n")
-    
-    conn_num = 1
-    
-    lo_durations = []
-    min_time_duration = None
-    max_time_duration = None
-    
-    
-    lo_all_rtts = []
-    min_rtt = None
-    max_rtt = None
-    
-    
-    
-    
-    lo_total_num_packets = []
-    
-    min_num_total_packets = None
-    
-    max_num_total_packets = None
-    
-    
-    
-    lo_all_window_sizes = []
-    min_window_size = None
-    max_window_size = None
-    
-    
-    num_reset_conns = 0
-    
-    num_open_conns = 0
-    
-    num_conns_started_before_capture = 0
-    
-    
-    
-    
-    
-    num_complete_conns = 0
-    for k, conn in dict_of_connections.items():
-        
-        
-        if conn.num_of_rsts > 0:
-            num_reset_conns += 1
-        
-        if conn_open_after(conn):
-            num_open_conns += 1
-        
-        if conn.lo_packets[0].TCP_header.flags.get("SYN") == 0:
-            num_conns_started_before_capture += 1
-        
-        
-        
-        if conn.complete:
-            if min_time_duration == None or min_time_duration > conn.duration:
-                min_time_duration = conn.duration
-                
-            if max_time_duration == None or max_time_duration < conn.duration:
-                max_time_duration = conn.duration
-            
-            lo_durations.append(conn.duration)
-            
-            
-            for rtt in conn.rtts:
-                
-            
-                if min_rtt == None or min_rtt > rtt:
-                    min_rtt = rtt
+                format_str = '>H'
+                if og_protocol == 17 and len(packet_payload) >= og_payload_start + 2:
+                    cur_packet.embedded_match_key = \
+                    struct.unpack(format_str, packet_payload[og_payload_start: og_payload_start + 2])[0]
+                elif og_protocol == 1 and len(packet_payload) >= og_payload_start + 8:
                     
-                if max_rtt == None or max_rtt < rtt:
-                    max_rtt = rtt
+                    cur_packet.embedded_match_key = \
+                    struct.unpack(format_str, packet_payload[og_payload_start + 6: og_payload_start + 8])[0]
                 
-                lo_all_rtts.append(rtt)
-                
-                
-                
-            for window_size in conn.window_sizes:
-                
+            if icmp_type == 0 and not cur_packet.embedded_match_key:
+                cur_packet.embedded_match_key = \
+                struct.unpack(format_str, packet_payload[payload_start + 6: payload_start + 8])[0]
+    
+    return cur_packet
+
+
+def analyze_traceroute(packets):
+    frags_dict = {}
+    frag_count = 0
+    
+    last_frag_offset = 0
+
+    probes_sent =  {}
+    rtt_measurements = {}
+
+    src_node = None
+    final_dest = None
+
+    lo_intermediate_nodes = []
+    
+    lo_ult_rtts = []
+
+    protocols = []
+
+
+
+    index_num = 1
+
+    prev_id_num = -1
+    prev_offset_num = -1
+
+    occurences_of_ttl_exceeded = 0
+
+    for p in packets:
+        # check if p.ICMP_header.type == 3000 only one time for all fragments with the same id
+        # if so, you need to 
+        if p.IP_header.identification not in frags_dict:
+                # this means its a new fragment
+                occurences_of_ttl_exceeded = 0
+                frags_dict[p.IP_header.identification] = [None, None, None] #index, offset, error_timestamp
+        
+        if p.ICMP_header is not None and p.ICMP_header.type == 3000:
+            occurences_of_ttl_exceeded += 1
+            frags_dict[p.IP_header.identification][2] = p.timestamp
+            p.err = True
+        
+        if occurences_of_ttl_exceeded >= 2:
+            p.calculate_rtt_differently = True
+        if prev_offset_num < 0:
+            prev_offset_num = p.IP_header.frag_offset
+        
+        
+        if prev_id_num < 0:
+            # first packet
+            prev_id_num = p.IP_header.identification
             
-                if min_window_size == None or min_window_size > window_size:
-                    min_window_size = window_size
-                    
-                if max_window_size == None or max_window_size < window_size:
-                    max_window_size = window_size
-                
-                lo_all_window_sizes.append(window_size)
-                
-                
-            
-        
-            num_total_packets = conn.dst_to_src_packets + conn.src_to_dst_packets
-            
-            
-            if min_num_total_packets == None or min_num_total_packets > num_total_packets:
-                min_num_total_packets = num_total_packets
-                
-            if max_num_total_packets == None or max_num_total_packets < num_total_packets:
-                max_num_total_packets = num_total_packets
-            
-            lo_total_num_packets.append(num_total_packets)
-            
-            
-            
-            
-        
-        if conn.complete:
-            num_complete_conns+=1
-        
-        
-        
-        
-        
-        print("Connection " + str(conn_num))
-        
-        conn_num+=1
-        
-        
-        print("Source Address: " + str(k[2]))
-        
-        print("Destination Address: " + str(k[0]))
-        
-        print("Source Port: " + str(k[3]))
-        
-        print("Destination Port: " + str(k[1]))
-        
-        
-        if conn.status == [-1, -1]:
-            print("Status: R")
         else:
-            print("Status: S" + str(conn.status[0]) + "F" + str(conn.status[1]))
-        
-        
-        #complete connection info:
-            
-        if conn.complete:
-            
-        
-            print("Start Time: " + str(conn.start_time))
-            
-            print("End Time: " + str(conn.end_time))
-            
-            print("Duration: " + str(conn.duration))
-            
-            
-            print("Number of packets sent from Source to Destination: " \
-                  + str(conn.src_to_dst_packets))
+            if prev_id_num == p.IP_header.identification:
+                #if the past packet id num is the same as the current one:
+                index_num += 1
+            else:
+                
+
+                #print("The number of fragments created from the original datagram " + str(prev_id_num) + " is :" + str(index_num))
+                index_num = 1
+                #print("The offset of the last fragment is: " + str(prev_offset_num))
                 
                 
-            print("Number of packets sent from Destination to Source: " \
-                  + str(conn.dst_to_src_packets))
-               
+
                 
-            print("Total number of packets : " \
-                  + str(conn.dst_to_src_packets + conn.src_to_dst_packets))
+            prev_id_num = p.IP_header.identification
+            prev_offset_num = p.IP_header.frag_offset
+        frags_dict[p.IP_header.identification][0] = index_num
+        frags_dict[p.IP_header.identification][1] = prev_offset_num
+        frags_dict[p.IP_header.identification][2] = p.timestamp
+
+    for p in packets:
+        #print("Fragment number " + str(index_num), end= "")
                 
-                
-                
-            print("Number of data bytes sent from Source to Destination: " \
-                 + str(conn.src_to_dst_bytes))
-               
-               
-            print("Number of data bytes sent from Destination to Source: " \
-                 + str(conn.dst_to_src_bytes))
-              
-               
-            print("Total num of data bytes : " \
-                 + str(conn.src_to_dst_bytes + conn.dst_to_src_bytes))
+        
+        
+        #print("    ID: " + str(p.IP_header.identification))
+        
+        #print("frag count = " + str(frag_count))
+
+        if p.IP_header.protocol not in protocols:
+
+            protocols.append(p.IP_header.protocol)
+        if src_node is None:
+            src_node = p.IP_header.src_ip
+
+
+            # this below if block should be moved back
+        if p.probe and p.IP_header.src_ip == src_node:
             
-        print("END\n")
+            final_dest = p.IP_header.dst_ip
+
+            cur_offset = p.IP_header.frag_offset
+
             
+            if p.IP_header.flags == 1 or cur_offset > 0:
+                if last_frag_offset < cur_offset:
+                    last_frag_offset = cur_offset
+                if cur_offset == 0:
+                    frag_count = 0
+                frag_count += 1
+            elif frag_count == 0:
+                frag_count = 1
+
+
+            if p.IP_header.protocol == 17:
+                match_key = p.UDP_header.src_port
+            else:
+                match_key = p.ICMP_header.seq_num
+            if match_key not in probes_sent:
+                probes_sent[match_key] = []
+            probes_sent[match_key].append(p.timestamp)
+        elif p.IP_header.dst_ip == src_node and p.err:
+            router_ip = p.IP_header.src_ip
+
+            if router_ip != final_dest and router_ip not in lo_intermediate_nodes:
+                lo_intermediate_nodes.append(router_ip)
+                rtt_measurements[router_ip] = []
+
+            # if the current ip address is the same as the destination, append it to the ultimate rtt dest
+            cur_embedded_match_key = p.embedded_match_key
             
+            #print(cur_embedded_match_key )
+            
+
+            if cur_embedded_match_key and cur_embedded_match_key in probes_sent:
+                
+                for t in probes_sent[cur_embedded_match_key]:
+                    
+                    
+                    # RTT = error timestamp - probe timestamp
+                    cur_rtt = (p.timestamp - t) * 1000
+                    
+                    cur_rtt = round(cur_rtt, 6) #CONVERT TO MS, MIGHT BE WRONG MAYBE HAVE TO CHECK NANO VS MICRO
+                    
+                    #print("cur_rtt= " + str(cur_rtt))
+                    #print("router_ip= " + str(router_ip))
+                    #print("final_dest= " + str(final_dest))
+    
+                    if router_ip != final_dest:
+                        rtt_measurements[router_ip].append(cur_rtt)
+                    else:
+                        lo_ult_rtts.append(cur_rtt)
+                        pass #implement solution where at the end of for loop we add the ultimate rtt
+
+                del probes_sent[cur_embedded_match_key]
+
+
+    # if the datagram is not fragmented, the offset is 0.
+    # if there is only one fragment (meaning it is not fragmented)
+    if last_frag_offset == 0 and frag_count == 1:
+        pass #TODO: IMPLEMENT MY SOLUTION HERE! 
+
+            # Enforce the unfragmented rule specifciation from Q&A pdf
+            #  The pdf expects *1* and *0 bytes* for unfragmented traces
+
+    return src_node, final_dest, lo_intermediate_nodes, protocols, frag_count, last_frag_offset, rtt_measurements, lo_ult_rtts, frags_dict
+
+
+
+
+
+
+
+
+def output_answers(src_node, dest_node, lo_intermediate_nodes, protocols, frag_count, last_frag_offset, rtt_measurements, lo_ult_rtts, frags_dict):
+
+    print("The IP address of the source node: " + str(src_node))
+
+    
+    print("The IP address of ultimate destination node: " + str(dest_node))
+    
+
+    print("The IP addresses of the intermediate destination nodes:")
+    index = 1
+    nodelistlength = len(lo_intermediate_nodes)
+    for r in lo_intermediate_nodes:
+        print("        router " + str(index) + ": " + str(r), end="")
+        print(".") if index==nodelistlength else print(",")
+        index += 1
+    
+    
+    print("\nThe values in the protocol field of IP headers:")
+
+    sorted_prots = sorted(protocols)
+
+    for prot in sorted_prots:
+        if prot==1:
+            print("        1: ICMP")
+        if prot==17:
+            print("        17: UDP")
+
+
+    for id, num_and_offset_list in frags_dict.items():
+        cur_num = num_and_offset_list[0]
+        cur_offset = num_and_offset_list[1]
+
+        print("\nThe number of fragments created from the original datagram " + str(id) + " is: " + str(cur_num))
+
+        print("\nThe offset of the last fragment is: " + str(cur_offset) + " bytes\n")
         
-             
-               
-        
-        
-        
-    print("C) General\n")
-    
-    print("The total number of complete TCP connections: " + str(num_complete_conns))
-    
-    print("The number of reset TCP connections: " + str(num_reset_conns))
-    
-    
-    print("The number of tcp connections that were still open when the trace capture ended: " \
-          + str(num_open_conns))
-    
-    
-    print("The number of tcp connections established before the capture started: " \
-          + str(num_conns_started_before_capture))
-        
-        
-    print("")
-        
-        
-        
-    print("D) Complete TCP Connections:\n")
-    
-    print("Minimum time duration: " + str(min_time_duration))
-    
-    if lo_durations == []:
-        print("Mean time duration: " + "None") 
-    else:
-        
-        print("Mean time duration: " + str(sum(lo_durations) / len(lo_durations)))
-        
-        
-        
-    print("Maximum time duration: " + str(max_time_duration)) 
-    
-    
-    
-    
-    print("")
-    
-    
-    """
-    
-    lo_all_rtts = []
-    min_rtt = None
-    max_rtt = None
-    
-    
-    """
-    
-    
-    print("Minimum RTT value: " + str(min_rtt))
-    
-    
-    if lo_all_rtts == []:
-        print("Mean RTT value: " + "None") 
-    else:
-        
-        print("Mean RTT value: " + str(sum(lo_all_rtts) / len(lo_all_rtts)))
-    
-        
-    
-    print("Max RTT value: " + str(max_rtt))
-    
-    
-    print("")
-    
-    
-    
-    
-    print("Minimum num total packets: " + str(min_num_total_packets))
-    
-    
-    if lo_total_num_packets == []:
-        print("Mean num total packets: " + "None") 
-    else:
-        
-        print("Mean num total packets: " + str(sum(lo_total_num_packets) / len(lo_total_num_packets)))
-    
-        
-    
-    print("Max num total packets: " + str(max_num_total_packets))
-    
-    
-    print("")
-    
-    
-    
-    
-    
-    
-    print("Minimum window size: " + str(min_window_size))
-    
-    
-    if lo_all_window_sizes == []:
-        print("Mean window size: " + "None") 
-    else:
-        
-        print("Mean window size: " + str(sum(lo_all_window_sizes) / len(lo_all_window_sizes)))
-    
-        
-    
-    print("Max window size value: " + str(max_window_size))
-    
-    
-    
-    
-    
-    
-    
-    
+
+
+
+    for r in lo_intermediate_nodes:
+        #print("R = " + str (r))
+        #print("PASSED LIST = " + str(rtt_measurements[r]))
+        # current issue: compute data gets passed a list of ip addresses instead of a list of round trip times.
+        cur_mean_rtt, cur_sd_rtt = compute_data(rtt_measurements[r])
+
+        if cur_mean_rtt.is_integer():
+            cur_mean_rtt = int(cur_mean_rtt)
+
+        if cur_sd_rtt.is_integer():
+            cur_sd_rtt = int(cur_sd_rtt)
+
+        print("The avg RTT between " + str(src_node) + " and " + str(r) + " is: " \
+               + str(cur_mean_rtt) + " ms, the s.d. is: " + str(cur_sd_rtt) + " ms")
         
         
-    file_obj.close()
-    return 0
+
+    # 00:20:30
+    #print(lo_ult_rtts)
+    if lo_ult_rtts != []:
+        
+        cur_mean_ult_rtt, cur_sd_ult_rtt = compute_data(lo_ult_rtts)
+            
+
+        if cur_mean_ult_rtt.is_integer():
+            cur_mean_ult_rtt = int(cur_mean_ult_rtt)
+
+        if cur_sd_ult_rtt.is_integer():
+            cur_sd_ult_rtt = int(cur_sd_ult_rtt)
+        
+        print("The avg RTT between " + str(src_node) + " and " + str(r) + " is: " \
+               + str(cur_mean_ult_rtt) + " ms, the s.d. is: " + str(cur_sd_ult_rtt) + " ms")
     
 
 
+
+        
+def compute_data(lo_rtts):
+    #print("LO_RTTS = " + str(lo_rtts))
+    mean_rtt, variance = 0.0, 0.0
+    if lo_rtts!=[]:
+        sum = 0.0
+        variance = 0.0
+        for element in lo_rtts:
+            
+            sum += element
+            
+        
+        mean_rtt = sum / len(lo_rtts)
+        if len(lo_rtts) > 1:
+            sum2=0
+            for element in lo_rtts:
+                sum2 += (element - mean_rtt) ** 2
+
+            variance = sum2/(len(lo_rtts) - 1)
+        
+    
+    
+
+    return round(mean_rtt, 2), round((variance) ** .5, 2)
+    
+
+
+
+
+
+  
 
 
 if __name__ == "__main__":
@@ -888,5 +490,32 @@ if __name__ == "__main__":
         sys.exit(1)
 
     filename = sys.argv[1]
-    main(filename)
+    #main(filename)
+
+    endian, file_obj, uses_nano = parse_global_header(filename)
+    
+    #print("endian is: " + str(endian))
+    
+    
+    packets = parse_packet_header_and_body(endian, file_obj, uses_nano)
+    
+
+    
+    
+
+    src_node, dest_node, lo_intermediate_nodes, protocols, frag_count, last_frag_offset, rtt_measurements, lo_ult_rtts, frags_dict = analyze_traceroute(packets)
+
+    output_answers(src_node, dest_node, lo_intermediate_nodes, protocols, frag_count, last_frag_offset, rtt_measurements, lo_ult_rtts, frags_dict)
+
+
+
+    file_obj.close()
+
+    
+    
+
+    
+    
+    
+    
     
